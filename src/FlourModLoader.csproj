@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <TargetFramework>net46</TargetFramework>
-    <AssemblyName>FPModLoader</AssemblyName>
+    <AssemblyName>FlourModLoader</AssemblyName>
     <Product>Getting Over It Mod Loader</Product>
-    <Version>1.0.0</Version>
+    <Version>0.1.0</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
     <RestoreAdditionalProjectSources>
@@ -12,12 +12,12 @@
       https://nuget.bepinex.dev/v3/index.json;
       https://nuget.samboy.dev/v3/index.json
     </RestoreAdditionalProjectSources>
-    <RootNamespace>FPModLoader</RootNamespace>
+    <RootNamespace>FlourModLoader</RootNamespace>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="FPModLoaderPlugin.cs" />
+    <Compile Include="FlourModLoaderPlugin.cs" />
     <Compile Include="GOIConstants.cs" />
   </ItemGroup>
 

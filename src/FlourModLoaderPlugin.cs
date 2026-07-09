@@ -15,11 +15,11 @@ using HarmonyLib;
 using System.Linq;
 using I2.Loc;
 
-namespace FPModLoader;
+namespace FlourModLoader;
 
 // why i did virtual class instead of interface: the mod loader can set monobehaviour enabled on mods so the fixedupdate doesnt get called
-public abstract class FPMod : BaseUnityPlugin {
-    // call in every mod: FPModLoaderPlugin.Instance.RegisterMod(this);
+public abstract class FlourMod : BaseUnityPlugin {
+    // call in every mod: FlourModLoaderPlugin.Instance.RegisterMod(this);
 
     // metadata
     public abstract string author { get; }
@@ -38,18 +38,18 @@ public abstract class FPMod : BaseUnityPlugin {
 };
 
 
-[BepInPlugin("goi.flowerpot.fpmodloader", "FlowerPot Mod Loader", "1.0.0.0")]
+[BepInPlugin("org.flour.flourmodloader", "Flour Mod Loader", "0.1.0")]
 [BepInProcess("GettingOverIt.exe")]
 [BepInDependency("com.bepis.bepinex.configurationmanager")]
-public class FPModLoaderPlugin : FPMod {
+public class FlourModLoaderPlugin : FlourMod {
 
-    public override string author => "Flower Pot";
+    public override string author => "Flour";
     public override string description => "mod loader";
 
     // singleton
-    public static FPModLoaderPlugin Instance { get; private set; }
+    public static FlourModLoaderPlugin Instance { get; private set; }
 
-    public void RegisterMod(FPMod mod) {
+    public void RegisterMod(FlourMod mod) {
         string guid = mod.Info.Metadata.GUID;
         // disable mod if mod is disabled
         _enabledModConfigs.Add(guid, Config.Bind("Enabled Mods", guid, false));
@@ -70,7 +70,7 @@ public class FPModLoaderPlugin : FPMod {
     private GameObject _settingsContainer;
     private GameObject _modSettingsContainer;
 
-    private Dictionary<string, FPMod> _mods;
+    private Dictionary<string, FlourMod> _mods;
     private Dictionary<string, ConfigEntry<bool>> _enabledModConfigs;
 
     public AssetBundle modLoaderUIBundle;
@@ -83,7 +83,7 @@ public class FPModLoaderPlugin : FPMod {
     public GameObject templateInputFieldPrefab;
 
     public GameObject modLoaderPanel;
-    private string _pluginFolder = "BepInEx/plugins/FPModLoader";
+    private string _pluginFolder = "BepInEx/plugins/FlourModLoader";
 
 
     private void Awake() {
@@ -91,10 +91,10 @@ public class FPModLoaderPlugin : FPMod {
 
         // Plugin startup logic
         Logger = base.Logger;
-        Logger.LogInfo($"Plugin FPModLoader is loaded!");
+        Logger.LogInfo($"Plugin FlourModLoader is loaded!");
 
         // patch with Harmony
-        var harmony = new Harmony("goi.flowerpot.fpmodloader");
+        var harmony = new Harmony("goi.flour.flourmodloader");
         harmony.PatchAll();
 
         _nowayFont = Resources.FindObjectsOfTypeAll<TMP_FontAsset>().FirstOrDefault(f => f.name == "Noway Regular SDF");
@@ -122,7 +122,7 @@ public class FPModLoaderPlugin : FPMod {
         GOIConstants.AddModifier("gravity", new LambdaModifier<Vector2>(gravity => gravity * 0f, 0, "zerograv", false));
 
 
-        _mods = new Dictionary<string, FPMod>();
+        _mods = new Dictionary<string, FlourMod>();
         _enabledModConfigs = new Dictionary<string, ConfigEntry<bool>>();
 
         RegisterMod(this);
@@ -140,12 +140,12 @@ public class FPModLoaderPlugin : FPMod {
             mod.Value.OnGameStateChange(oldState, newState, scene);
         }
     }
-    private void EnableMod(FPMod mod) {
+    private void EnableMod(FlourMod mod) {
         mod.enabled = true;
         _enabledModConfigs[mod.Info.Metadata.GUID].Value = true;
         mod.OnModEnable();
     }
-    private void DisableMod(FPMod mod) {
+    private void DisableMod(FlourMod mod) {
         mod.OnModDisable();
         mod.enabled = false;
         _enabledModConfigs[mod.Info.Metadata.GUID].Value = false;
@@ -405,7 +405,7 @@ public class FPModLoaderPlugin : FPMod {
         ReplaceFontsInObject(modLoaderPanel);
         return modLoaderPanel;
     }
-    private void AddModToModMenu(FPMod mod) {
+    private void AddModToModMenu(FlourMod mod) {
         // add to left panel
         var pluginAttr = mod.GetType().GetCustomAttribute<BepInPlugin>();
         Transform modRows = modLoaderPanel.transform.Find("Panel").Find("Mod List").Find("Viewport").Find("Content").Find("Mod List Panel").Find("Rows");

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using System;
 
-namespace FPModLoader;
+namespace FlourModLoader;
 
 public enum GameState {
     InGame, MainMenu, RewardMenu, Credits
