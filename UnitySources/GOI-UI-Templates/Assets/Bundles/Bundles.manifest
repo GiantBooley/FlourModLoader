@@ -1,7 +1,7 @@
 ManifestFileVersion: 0
-CRC: 3726940232
+CRC: 3184683498
 AssetBundleManifest:
   AssetBundleInfos:
     Info_0:
-      Name: modloaderui.scene
+      Name: modloaderui.assets
       Dependencies: {}

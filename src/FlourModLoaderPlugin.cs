@@ -17,17 +17,13 @@ using I2.Loc;
 
 namespace FlourModLoader;
 
-// why i did virtual class instead of interface: the mod loader can set monobehaviour enabled on mods so the fixedupdate doesnt get called
 public abstract class FlourMod : BaseUnityPlugin {
     // call in every mod: FlourModLoaderPlugin.Instance.RegisterMod(this);
 
     // metadata
-    public abstract string author { get; }
-    public abstract string description { get; }
+    public abstract string Author { get; }
+    public abstract string Description { get; }
 
-    // callbacks
-    public virtual void OnModEnable() {}
-    public virtual void OnModDisable() {}
     public virtual void OnGameStateChange(GameState oldState, GameState newState, Scene scene) {}
     public virtual void OnPause() {}
     public virtual void OnUnpause() {}
@@ -43,38 +39,37 @@ public abstract class FlourMod : BaseUnityPlugin {
 [BepInDependency("com.bepis.bepinex.configurationmanager")]
 public class FlourModLoaderPlugin : FlourMod {
 
-    public override string author => "Flour";
-    public override string description => "mod loader";
+    public override string Author => "Flour";
+    public override string Description => "mod loader";
 
     // singleton
     public static FlourModLoaderPlugin Instance { get; private set; }
 
-    public void RegisterMod(FlourMod mod) {
-        string guid = mod.Info.Metadata.GUID;
-        // disable mod if mod is disabled
-        _enabledModConfigs.Add(guid, Config.Bind("Enabled Mods", guid, false));
-        if (!_enabledModConfigs[guid].Value) DisableMod(mod);
-        _mods.Add(guid, mod);
-        if (modLoaderPanel != null) {
-            AddModToModMenu(mod);
-        }
+    // from ConfigurationManager
+    public static BaseUnityPlugin[] FindPlugins() {
+        // Search for instances of BaseUnityPlugin to also find dynamically loaded plugins.
+        // Have to use FindObjectsOfType(Type) instead of FindObjectsOfType<T> because the latter is not available in some older unity versions.
+        // Still look inside Chainloader.PluginInfos in case the BepInEx_Manager GameObject uses HideFlags.HideAndDontSave, which hides it from Object.Find methods.
+        return Chainloader.PluginInfos.Values.Select(x => x.Instance)
+            .Where(plugin => plugin != null)
+            .Union(UnityEngine.Object.FindObjectsOfType(typeof(BaseUnityPlugin)).Cast<BaseUnityPlugin>())
+            .ToArray();
     }
 
     internal static new ManualLogSource Logger;
-
+    
     private ConfigurationManager.ConfigurationManager _configurationManager;
+    private string _pluginFolder = "BepInEx/plugins/FlourModLoader";
 
-    private TMP_FontAsset _nowayFont;
-    private Transform _menuTransform;
-
-    private GameObject _settingsContainer;
-    private GameObject _modSettingsContainer;
-
-    private Dictionary<string, FlourMod> _mods;
+    private BaseUnityPlugin[] _mods;
     private Dictionary<string, ConfigEntry<bool>> _enabledModConfigs;
 
-    public AssetBundle modLoaderUIBundle;
+    // ========== UI =============
+    private GameObject _settingsContainer;
+    private GameObject _modSettingsContainer;
+    
     // prefabs
+    public AssetBundle modLoaderUIBundle;
     public GameObject modLoaderPanelPrefab;
     public GameObject templateModRowPrefab;
     public GameObject templateSettingRowPrefab;
@@ -83,7 +78,6 @@ public class FlourModLoaderPlugin : FlourMod {
     public GameObject templateInputFieldPrefab;
 
     public GameObject modLoaderPanel;
-    private string _pluginFolder = "BepInEx/plugins/FlourModLoader";
 
 
     private void Awake() {
@@ -91,18 +85,16 @@ public class FlourModLoaderPlugin : FlourMod {
 
         // Plugin startup logic
         Logger = base.Logger;
-        Logger.LogInfo($"Plugin FlourModLoader is loaded!");
+        Logger.LogInfo($"Plugin {MyPluginInfo.PLUGIN_GUID} is loaded!");
 
         // patch with Harmony
         var harmony = new Harmony("goi.flour.flourmodloader");
         harmony.PatchAll();
 
-        _nowayFont = Resources.FindObjectsOfTypeAll<TMP_FontAsset>().FirstOrDefault(f => f.name == "Noway Regular SDF");
-
         _configurationManager = (ConfigurationManager.ConfigurationManager)Chainloader.PluginInfos["com.bepis.bepinex.configurationmanager"].Instance;
 
         // load ui
-        modLoaderUIBundle = AssetBundle.LoadFromFile(Path.Combine(Path.GetDirectoryName(Application.dataPath), _pluginFolder, "modloaderui.scene"));
+        modLoaderUIBundle = AssetBundle.LoadFromFile(Path.Combine(Path.GetDirectoryName(Application.dataPath), _pluginFolder, "modloaderui.assets"));
         modLoaderPanelPrefab = modLoaderUIBundle.LoadAsset<GameObject>("ModLoader.prefab");
         templateModRowPrefab = modLoaderUIBundle.LoadAsset<GameObject>("TemplateModRow.prefab");
         templateSettingRowPrefab = modLoaderUIBundle.LoadAsset<GameObject>("TemplateSettingRow.prefab");
@@ -111,9 +103,10 @@ public class FlourModLoaderPlugin : FlourMod {
         templateInputFieldPrefab = modLoaderUIBundle.LoadAsset<GameObject>("TemplateInputField.prefab");
 
         // Set OnSceneLoaded to execute when a scene is loaded
+        Logger.LogInfo("added OnSceneLoaded event in Awake()");
         SceneManager.sceneLoaded += OnSceneLoaded;
 
-        // init goiInterface
+        // init GOIConstants
         GOIConstants.timer = 0f;
         GOIConstants.gameState = GameState.MainMenu;
         GOIConstants.CreateConstant<float>("timeScale", 1f, timeScale => Time.timeScale = timeScale);
@@ -121,13 +114,9 @@ public class FlourModLoaderPlugin : FlourMod {
         GOIConstants.CreateConstant<Vector2>("gravity", new Vector2(0f, -30f), gravity => Physics2D.gravity = gravity);
         GOIConstants.AddModifier("gravity", new LambdaModifier<Vector2>(gravity => gravity * 0f, 0, "zerograv", false));
 
-
-        _mods = new Dictionary<string, FlourMod>();
         _enabledModConfigs = new Dictionary<string, ConfigEntry<bool>>();
-
-        RegisterMod(this);
-        _enabledModConfigs[Info.Metadata.GUID].Value = true;
     }
+
     private void LateUpdate() {
         GOIConstants.timer += Time.deltaTime;
     }
@@ -135,25 +124,25 @@ public class FlourModLoaderPlugin : FlourMod {
     public void ChangeGameState(GameState newState, Scene scene) {
         GameState oldState = GOIConstants.gameState;
         GOIConstants.gameState = newState;
+        
         foreach (var mod in _mods) {
-            if (!_enabledModConfigs[mod.Value.Info.Metadata.GUID].Value) continue;
-            mod.Value.OnGameStateChange(oldState, newState, scene);
+            if (!mod.enabled) continue;
+            if (mod is FlourMod) {
+                var flourMod = (FlourMod)mod;
+                
+                flourMod.OnGameStateChange(oldState, newState, scene);
+            }
         }
     }
-    private void EnableMod(FlourMod mod) {
+    private void EnableMod(BaseUnityPlugin mod) {
         mod.enabled = true;
         _enabledModConfigs[mod.Info.Metadata.GUID].Value = true;
-        mod.OnModEnable();
     }
-    private void DisableMod(FlourMod mod) {
-        mod.OnModDisable();
+    private void DisableMod(BaseUnityPlugin mod) {
         mod.enabled = false;
         _enabledModConfigs[mod.Info.Metadata.GUID].Value = false;
     }
 
-    public bool IsModEnabled(string guid) {
-        return _enabledModConfigs[guid].Value;
-    }
 
     public override void OnGameStateChange(GameState oldState, GameState newState, Scene scene) {
         if (newState == GameState.InGame)  {
@@ -185,26 +174,7 @@ public class FlourModLoaderPlugin : FlourMod {
 
 
             GameObject menuObject = Resources.FindObjectsOfTypeAll<GameObject>().FirstOrDefault(go => go.name == "InGame Menu");
-            if (menuObject == null) Logger.LogWarning("Couldn't find InGame Menu");
-            else _menuTransform = menuObject.transform;
-
-            //StartCoroutine(enableMenu());
-
-
-            // Load font
-            /*if (nowayFont == null) {
-                GameObject fontTextObject = Resources.FindObjectsOfTypeAll<GameObject>().FirstOrDefault(go => go.name == "Mouse sensitivity");
-                if (fontTextObject != null) {
-                    TMP_Text tmpText = fontTextObject.GetComponent<TMP_Text>();
-                    if (tmpText == null) Logger.LogWarning("Text has no TMP_Text");
-                    else {
-                        nowayFont = tmpText.font;
-                    }
-                } else {
-                    Logger.LogWarning("Failed to find mouse sensitivity text for font");
-                }
-            }*/
-
+            
             // =-=-=-=- Edit ingame menu =-=-=-=-=-
             // move default columns to settings container
             _settingsContainer = new GameObject("Settings container");
@@ -232,7 +202,7 @@ public class FlourModLoaderPlugin : FlourMod {
 
                 // add mods
                 foreach (var mod in _mods) {
-                    AddModToModMenu(mod.Value);
+                    AddModToModMenu(mod);
                 }
             }
 
@@ -284,7 +254,7 @@ public class FlourModLoaderPlugin : FlourMod {
 
                 // add mods
                 foreach (var mod in _mods) {
-                    AddModToModMenu(mod.Value);
+                    AddModToModMenu(mod);
                 }
                 modLoaderPanel.SetActive(false);
             }
@@ -306,18 +276,22 @@ public class FlourModLoaderPlugin : FlourMod {
             }
         }
     }
-    /*private IEnumerator enableMenu() {
-        while (GOIConstants.canvas == null) {
-            yield return null;
-        }
-
-        settingsContainer.SetActive(true);
-        GOIConstants.canvas.transform.Find("InGame Menu").Find("Panel").gameObject.SetActive(true);
-    }*/
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode) {
+        // Find plugins, needs to happen after awakes are called before scene loads
+        if (_mods == null) {
+            _mods = FindPlugins();
+            // disable mods that are disabled in config
+            foreach (var mod in _mods) {
+                string guid = mod.Info.Metadata.GUID;
+                _enabledModConfigs.Add(guid, Config.Bind("Enabled Mods", guid, false));
+                if (!_enabledModConfigs[guid].Value) DisableMod(mod);
+            }
+            // Enable mod loader by default
+            _enabledModConfigs[Info.Metadata.GUID].Value = true;
+        }
+        
         if (scene.name == "Mian") {
             ChangeGameState(GameState.InGame, scene);
-            Logger.LogInfo("GAME STATE CHANGE mian");
         } else if (scene.name == "Loader") {
             ChangeGameState(GameState.MainMenu, scene);
         } else if (scene.name == "Reward Loader") {
@@ -385,35 +359,21 @@ public class FlourModLoaderPlugin : FlourMod {
 
         return menuButtonObject;
     }
-    public void ReplaceFontsInObject(GameObject o) {
-        if (_nowayFont == null) Logger.LogWarning("Menu font is null");
-        var textComponents = o.GetComponentsInChildren<TextMeshProUGUI>(true);
-
-        foreach (var tmp in textComponents) {
-            tmp.font = _nowayFont;
-            tmp.fontMaterial = _nowayFont.material;
-            tmp.UpdateFontAsset();
-        }
-    }
     private GameObject CreateModMenu() {
         // copy panel
         GameObject modLoaderPanel = Instantiate(modLoaderPanelPrefab);
         // move
         RectTransform rect = modLoaderPanel.GetComponent<RectTransform>();
         rect.anchoredPosition = new Vector2(-140f, 50f);
-        // replace fonts
-        ReplaceFontsInObject(modLoaderPanel);
         return modLoaderPanel;
     }
-    private void AddModToModMenu(FlourMod mod) {
+    private void AddModToModMenu(BaseUnityPlugin mod) {
         // add to left panel
-        var pluginAttr = mod.GetType().GetCustomAttribute<BepInPlugin>();
         Transform modRows = modLoaderPanel.transform.Find("Panel").Find("Mod List").Find("Viewport").Find("Content").Find("Mod List Panel").Find("Rows");
         GameObject modRowObject = Instantiate(templateModRowPrefab);
-        ReplaceFontsInObject(modRowObject);
         TextMeshProUGUI modRowText = modRowObject.transform.Find("Left").Find("Noway-Regular").GetComponent<TextMeshProUGUI>();
-        modRowText.text = pluginAttr.Name;
-        modRowObject.name = pluginAttr.GUID;
+        modRowText.text = mod.Info.Metadata.Name + " v" + mod.Info.Metadata.Version; // to do: make version optional
+        modRowObject.name = mod.Info.Metadata.GUID;
         // set toggle to enable and disable mod
         Toggle modRowToggle = modRowObject.transform.Find("Right").Find("TemplateCheckbox").GetComponent<Toggle>();
         modRowToggle.isOn = _enabledModConfigs[mod.Info.Metadata.GUID].Value;
@@ -424,17 +384,18 @@ public class FlourModLoaderPlugin : FlourMod {
         // add mod row with checkbox
         modRowObject.transform.SetParent(modRows, false);
 
-        // generate settings object
-        GameObject configEditor = mod.GetConfigEditor();
-        if (configEditor != null) {
-            configEditor.name = pluginAttr.GUID;
-            configEditor.transform.SetParent(modLoaderPanel.transform.Find("Panel").Find("Mod Settings"), false);
-            configEditor.SetActive(false);
-        } else { // config editor not provided, generate from BepInEx config
-            GameObject settingsPanel = Instantiate(templateSettingsContainerPrefab);
-            settingsPanel.name = pluginAttr.GUID;
+        // add config editor object
 
+        GameObject configEditor = null;
+        
+        if (mod is FlourMod) {
+            var flourMod = (FlourMod)mod;
+            configEditor = flourMod.GetConfigEditor();
+        }
 
+        if (configEditor == null) { // config editor not provided, generate from BepInEx config
+            configEditor = Instantiate(templateSettingsContainerPrefab);
+            
             // add settings to right panel
             var fields = mod.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).Where(f =>
                 f.FieldType == typeof(ConfigEntry<bool>) ||
@@ -519,21 +480,21 @@ public class FlourModLoaderPlugin : FlourMod {
                         }
                     });
                 }
-                ReplaceFontsInObject(settingRow);
 
-                settingRow.transform.SetParent(settingsPanel.transform.Find("Viewport").Find("Content"), false);
+                settingRow.transform.SetParent(configEditor.transform.Find("Viewport").Find("Content"), false);
             }
-            // add settings to right panel
-            settingsPanel.transform.SetParent(modLoaderPanel.transform.Find("Panel").Find("Mod Settings"), false);
-            settingsPanel.SetActive(false);
         }
+        // add config editor to right panel
+        configEditor.transform.SetParent(modLoaderPanel.transform.Find("Panel").Find("Mod Settings"), false);
+        configEditor.SetActive(false);
+        configEditor.name = mod.Info.Metadata.GUID;
         
         // add click event on mod row (searches for object with GUID name)
         Button rowButton = modRowObject.transform.Find("Left").GetComponent<Button>();
         rowButton.onClick.AddListener(() => {
             Transform modSettingsContainer = modLoaderPanel.transform.Find("Panel").Find("Mod Settings");
             foreach (Transform child in modSettingsContainer) {
-                child.gameObject.SetActive(child.name == pluginAttr.GUID);
+                child.gameObject.SetActive(child.name == mod.Info.Metadata.GUID);
             }
         });
     }
@@ -572,7 +533,7 @@ public static class PoseControlAwakePatch {
         if (__instance.spline != null) {
             controlPointsRef(__instance) = new Vector3[__instance.spline.ControlPointCount];
             for (int j = 0; j < __instance.spline.ControlPointCount; j++) {
-                controlPointsRef(__instance)[j] = __instance.spline.ControlPoints[j].position;
+                controlPointsRef(__instance)[j] = __instance.spline.ControlPointsList[j].position; // original: ControlPoints[j]
             }
         }
         lateUpdateMethod.Invoke(__instance, null);
